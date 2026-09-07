@@ -1,0 +1,3 @@
+liboqs-python
+flask
+flask-cors
