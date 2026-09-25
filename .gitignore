@@ -26,6 +26,10 @@ venv/
 env/
 ENV/
 
+# Local secrets
+**/.env
+!.env.example
+
 # Node / Frontend
 node_modules/
 **/node_modules/

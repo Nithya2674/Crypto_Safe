@@ -1,3 +1,5 @@
 liboqs-python
 flask
 flask-cors
+groq
+python-dotenv

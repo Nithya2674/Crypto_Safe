@@ -153,6 +153,8 @@ export default function App() {
   const [error, setError] = useState<string>("");
   const [activeRules, setActiveRules] = useState<RuleMeta[]>([]);
   const [showRulesCatalog, setShowRulesCatalog] = useState<boolean>(false);
+  const [aiFix, setAiFix] = useState<any | null>(null);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
 
   // Auto-Fix state
   const [diffModalOpen, setDiffModalOpen] = useState<boolean>(false);
@@ -177,11 +179,12 @@ export default function App() {
 
   const handleScenarioChange = (index: number) => {
     setSelectedScenarioIndex(index);
-    setCode(SCENARIOS[index].code);
     setFindings([]);
     setReadinessScore(null);
     setGrade("");
     setError("");
+    setAiFix(null);
+    setCode("");
   };
 
   const analyzeCode = async (overrideCode?: string) => {
@@ -189,6 +192,7 @@ export default function App() {
     setLoading(true);
     setError("");
     setFindings([]);
+    setAiFix(null);
 
     try {
       const res = await fetch("http://127.0.0.1:5000/api/scan", {
@@ -203,10 +207,41 @@ export default function App() {
       setFindings(data.findings || []);
       setReadinessScore(data.readiness_score !== undefined ? data.readiness_score : null);
       setGrade(data.grade || "");
+
+      if ((data.findings || []).length > 0) {
+        await requestAiFix(targetCode, data.findings || []);
+      }
     } catch {
       setError("Cannot connect to CryptoAPI-Safe backend. Make sure Flask server is running at http://127.0.0.1:5000.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const requestAiFix = async (targetCode: string, targetFindings: Finding[] = findings) => {
+    setAiLoading(true);
+    try {
+      const res = await fetch("http://127.0.0.1:5000/api/ai-fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: targetCode, findings: targetFindings }),
+      });
+
+      if (!res.ok) throw new Error("AI fix request failed");
+
+      const data = await res.json();
+      setAiFix(data);
+    } catch {
+      setAiFix({
+        success: false,
+        summary: "AI fallback unavailable. The deterministic repair engine is still active.",
+        fix_recommendation: "Use the rule-based remediation suggestions and review the issue manually.",
+        secure_code: targetCode,
+        status: "ambiguous",
+        confidence: 0.5,
+      });
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -458,20 +493,45 @@ export default function App() {
                       ? "No cryptographic API misuse or quantum-vulnerable algorithms detected in this snippet."
                       : "Select a scenario and click 'Run Security Analysis' to evaluate."}
                   </p>
+                  {readinessScore !== null && code.trim() && (
+                    <button
+                      onClick={() => requestAiFix(code, [])}
+                      disabled={aiLoading}
+                      className="mt-5 rounded-lg border border-emerald-300 bg-white px-4 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {aiLoading ? "Asking Groq to review..." : "Ask Groq to Review This Code"}
+                    </button>
+                  )}
+                  {aiFix && (
+                    <div className="mt-5 w-full max-w-xl rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-bold text-emerald-800">Groq AI Review</h4>
+                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
+                          {aiFix.status || "reviewed"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-emerald-900">{aiFix.summary}</p>
+                      {aiFix.fix_recommendation && (
+                        <p className="mt-2 text-xs leading-5 text-emerald-800">
+                          <strong>Fix:</strong> {aiFix.fix_recommendation}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
               {findings.length > 0 && (
                 <div className="space-y-4">
-                  {/* One-Click Auto-Fix Banner */}
+                  {/* AI + Rule Hybrid Fix Banner */}
                   <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-linear-to-r from-blue-50 to-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between shadow-xs">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-600 text-xs font-bold text-white shadow-xs">⚡</span>
-                        <h4 className="text-sm font-bold text-blue-950">One-Click Auto-Fix Available</h4>
+                        <h4 className="text-sm font-bold text-blue-950">Rule Engine + Groq AI Fix Layer</h4>
                       </div>
                       <p className="mt-1 text-xs text-blue-800">
-                        Automatically transform detected flaws to NIST FIPS standards with interactive diff preview.
+                        Known issues are fixed deterministically; rare or ambiguous patterns are explained and corrected by Groq.
                       </p>
                     </div>
 
@@ -483,6 +543,28 @@ export default function App() {
                       {fixing ? "Generating Patches..." : "⚡ Review & Apply Auto-Fix"}
                     </button>
                   </div>
+
+                  {aiFix && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-bold text-emerald-800">Groq AI Recommendation</h4>
+                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                          {aiFix.status || "ambiguous"}
+                        </span>
+                      </div>
+
+                      <p className="mt-2 text-xs leading-5 text-emerald-900">{aiFix.summary || "Review the issue and apply the secure fix."}</p>
+                      <p className="mt-2 text-xs leading-5 text-emerald-800"><strong>Fix:</strong> {aiFix.fix_recommendation || "Use a secure cryptographic pattern."}</p>
+
+                      {aiFix.secure_code && aiFix.secure_code !== code && (
+                        <pre className="mt-3 overflow-x-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
+                          {String(aiFix.secure_code).slice(0, 800)}
+                        </pre>
+                      )}
+
+                      {aiLoading && <p className="mt-2 text-xs text-emerald-700">Analyzing with Groq...</p>}
+                    </div>
+                  )}
 
                   {findings.map((finding, index) => (
                     <div
@@ -561,16 +643,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* Educational Architecture Workflow */}
-        <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold">How the Modular Post-Quantum Engine Works</h3>
-          <div className="mt-5 grid gap-4 md:grid-cols-4">
-            <Step number="01" title="Semantic AST Parsing" description="Source code is parsed into Python AST; variable roles (keys, seeds, secrets) are tracked." />
-            <Step number="02" title="Context Symbol Table" description="Variables are mapped to roles (PUBLIC_KEY, PRIVATE_KEY) regardless of naming conventions." />
-            <Step number="03" title="8-Rule Security Suite" description="Evaluates Key Roles, Shor's Vulnerability, Weak Entropy, Signature Checks, and FIPS naming." />
-            <Step number="04" title="Audit & Score" description="Calculates Quantum Readiness Score (0-100%), maps CWEs, and produces remediation." />
-          </div>
-        </section>
       </main>
 
       <footer className="border-t border-slate-200 bg-white py-6">
@@ -593,12 +665,3 @@ export default function App() {
   );
 }
 
-function Step({ number, title, description }: { number: string; title: string; description: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 p-4">
-      <span className="text-sm font-bold text-blue-600">{number}</span>
-      <h4 className="mt-2 font-semibold text-sm">{title}</h4>
-      <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
-    </div>
-  );
-}

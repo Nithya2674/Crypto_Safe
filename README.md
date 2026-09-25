@@ -6,7 +6,10 @@ Post-Quantum Cryptographic API Misuse Detection — a small demo that statically
 - backend/: Flask API and AST scanner
   - backend/app.py — API server (POST /api/scan)
   - backend/analyzer/scanner.py — demo AST rules
-  - backend/requirements.txt — Python dependencies (liboqs-python, flask, flask-cors)
+  - backend/requirements.txt — Python dependencies (liboqs-python, flask
+  
+  
+  , flask-cors)
   - backend/crypto/mlkem_demo.py — example using liboqs
 - backend/frontend/: Vite + React frontend (UI to paste code and view findings)
 

@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from analyzer.scanner import scan_code_full, get_registered_rules, auto_fix_code
+from groq_service import generate_ai_fix, probe_groq_connection
 
 
 app = Flask(__name__)
@@ -90,6 +91,35 @@ def fix():
 
     return jsonify(fix_result)
 
+
+@app.route("/api/ai-status", methods=["GET"])
+def ai_status():
+    """Diagnose Groq configuration without exposing secrets."""
+    return jsonify(probe_groq_connection())
+
+
+@app.route("/api/ai-fix", methods=["POST"])
+def ai_fix():
+    """Uses Groq as an intelligent remediation layer on top of the static engine."""
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "success": False,
+            "error": "Request body is missing."
+        }), 400
+
+    code = data.get("code", "")
+    findings = data.get("findings", [])
+
+    if not code.strip():
+        return jsonify({
+            "success": False,
+            "error": "No code provided."
+        }), 400
+
+    result = generate_ai_fix(code, findings)
+    return jsonify(result)
 
 
 if __name__ == "__main__":
